@@ -13,9 +13,14 @@ from PIL import Image
 import tempfile
 import subprocess
 
+import time
+
 from utils.video import initialize_video, draw_box_with_label
 from utils.tracking import calculate_speed, update_tracking_path
-from utils.model import model
+from utils.model import load_model
+
+model = load_model()
+
 from utils.gemini import threaded_gemini_call, get_traffic_condition_text, get_incident_warning_text, set_default_traffic_status
 from utils.heatmap import update_heatmap, render_heatmap, make_kernel, SIGMA
 
@@ -42,9 +47,13 @@ latest_vehicle_data = deque(maxlen=50)
 # Reset logic
 if reset_button:
     st.session_state.processing_done = False
-    st.experimental_rerun()
+    st.rerun()
 
 def process_frame(frame, fps, heatmap_accum, gauss_kernel, width, height):
+    
+    if frame.shape[0] != height or frame.shape[1] != width:
+        frame = cv2.resize(frame, (width, height))
+    
     results = model.track(frame, persist=True, conf=0.2, iou=0.5)[0]
     vehicle_data = []
     for box in results.boxes or []:
@@ -63,13 +72,15 @@ def process_frame(frame, fps, heatmap_accum, gauss_kernel, width, height):
 
         weight = 1.0
         update_heatmap(heatmap_accum, cx, cy, weight, gauss_kernel)
-        label = f"#{tracker_id} {model.names[cls_id]} {conf:.2f} | {int(speed)} km/h"
+        label = f"#{tracker_id} {model.names[cls_id]} | {int(speed)} km/h"
         draw_box_with_label(frame, bbox, label)
         vehicle_data.append(label)
     return frame, vehicle_data
 
 # Main processing block
 if start_button and uploaded_file and not st.session_state.processing_done:
+    model = load_model()  
+    
     st.session_state.processing_done = True  # Prevent re-runs
 
     # Save uploaded file to a temporary location
@@ -88,12 +99,25 @@ if start_button and uploaded_file and not st.session_state.processing_done:
     heatmap_accum = np.zeros((height, width), dtype=np.float32)
     gauss_kernel = make_kernel(SIGMA) * 20
     frame_counter = 0
+    padding_height = 70
     latest_vehicle_data.clear()
 
     # Output video writer
-    output_path = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False).name
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    # output_path = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False).name
+    # fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    output_path = tempfile.NamedTemporaryFile(suffix=".webm", delete=False).name
+    fourcc = cv2.VideoWriter_fourcc(*'VP80')  # VP8 codec for .webm
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height + padding_height))
+    
+    if fps == 0:
+        fps = 30
+        
+    
+    display_update_interval_secs = 3
+    display_update_interval_frames = int(fps * display_update_interval_secs)
+
+    displayed_traffic_text = get_traffic_condition_text()
+    displayed_incident_text = get_incident_warning_text()
 
     while True:
         ret, frame = cap.read()
@@ -104,41 +128,41 @@ if start_button and uploaded_file and not st.session_state.processing_done:
         latest_vehicle_data.append("; ".join(vehicle_data))
         metadata_text = "\n".join(list(latest_vehicle_data)[-5:])
 
-        if frame_counter % 4 == 0:
+        if frame_counter % int(fps) == 0:
             threaded_gemini_call(processed_frame.copy(), metadata_text)
+            
+        # Update displayed text only every 5 seconds
+        if frame_counter % display_update_interval_frames == 0:
+            displayed_traffic_text = get_traffic_condition_text()
+            displayed_incident_text = get_incident_warning_text()
 
         frame_counter += 1
 
-        # Draw overlays with shadows
-        cv2.putText(processed_frame, f"Incident Alert: {get_incident_warning_text()}",
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 4)
-        cv2.putText(processed_frame, f"Incident Alert: {get_incident_warning_text()}",
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-        cv2.putText(processed_frame, f"Traffic Conditions: {get_traffic_condition_text()}",
-                    (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 4)
-        cv2.putText(processed_frame, f"Traffic Conditions: {get_traffic_condition_text()}",
-                    (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale = 0.6
+        thickness = 2
+
+        # Create black padding (top bar)
+        top_bar = np.zeros((padding_height, width, 3), dtype=np.uint8)
+        cv2.putText(top_bar, f"Incidents: {displayed_incident_text}",
+                    (10, 25), font, scale, (0, 0, 255), thickness)
+
+        cv2.putText(top_bar, f"Traffic Conditions: {displayed_traffic_text}",
+                    (10, 55), font, scale, (0, 255, 255), thickness)
+
+        # Combine top bar with the actual frame
+        processed_frame = np.vstack((top_bar, processed_frame))
 
         out.write(processed_frame)
 
     cap.release()
     out.release()
-
-    # Convert to WebM using ffmpeg
-    webm_path = output_path.replace(".mp4", ".webm")
-    ffmpeg_command = [
-        "ffmpeg", "-i", output_path,
-        "-c:v", "libvpx-vp9",
-        "-b:v", "1M",
-        "-c:a", "libopus",
-        webm_path
-    ]
-    subprocess.run(ffmpeg_command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    # Display results
+    
+    print("YOLO processing done")
+    
     st.success("✅ Video processing complete!")
-
-    with open(webm_path, "rb") as vid_file:
+    
+    with open(output_path, "rb") as vid_file:
         video_bytes = vid_file.read()
         st.video(video_bytes)
         st.download_button(
@@ -147,6 +171,7 @@ if start_button and uploaded_file and not st.session_state.processing_done:
             file_name="processed_traffic_video.webm",
             mime="video/webm"
         )
+
 
     heatmap = render_heatmap(heatmap_accum, base_frame=base_frame)
     heatmap_rgb = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
