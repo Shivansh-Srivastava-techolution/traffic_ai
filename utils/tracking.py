@@ -10,8 +10,8 @@ previous_positions = {}
 tracking_paths = {}
 speed_history = {}
 
-def calculate_speed(tracker_id, current_pos, bbox_height, fps):
-    pixel_to_meter = 1.4 / bbox_height if bbox_height > 0 else 0.05
+def calculate_speed(tracker_id, current_pos, bbox_height, fps, average_vehichle_height=1.4):
+    pixel_to_meter = average_vehichle_height / bbox_height if bbox_height > 0 else 0.05
     speed_kmph = 0.0
     if tracker_id in previous_positions:
         pixel_dist = np.linalg.norm(np.array(current_pos) - np.array(previous_positions[tracker_id]))

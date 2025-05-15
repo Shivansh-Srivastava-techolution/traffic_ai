@@ -52,13 +52,25 @@ def main(video_path):
         if frame_counter % 3 == 0:
             threaded_gemini_call(processed_frame.copy(), metadata_text)
         frame_counter += 1
+        
+        # Process the response from Gemini 
+        incident_warning = get_incident_warning_text()
+        warnings = incident_warning.split('|')
+        print("Warnings : ", warnings)
+        
+        text_to_show = ""
+        for warning in warnings:
+            text_to_show = text_to_show + warnings + "\n"
+        
+        
         cv2.putText(processed_frame, f"Traffic Conditions: {get_traffic_condition_text()}", (10, height - 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-        cv2.putText(processed_frame, f"Incident Alert: {get_incident_warning_text()}", (10, height - 10),
+        cv2.putText(processed_frame, f"Incident Alert: {text_to_show}", (10, height - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
         cv2.imshow("Vehicle Tracker", processed_frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+            
     cap.release()
     cv2.destroyAllWindows()
 

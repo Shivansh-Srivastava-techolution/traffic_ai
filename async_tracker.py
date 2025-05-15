@@ -109,7 +109,7 @@ def threaded_gemini_call(frame, metadata_text):
 
 # Process each frame
 def process_frame(frame, fps, heatmap_mask, width, height):
-    results = model.track(frame, persist=True, conf=0.2, iou=0.5)[0]
+    results = model.track(frame, persist=True, conf=0.7, iou=0.7)[0]
     vehicle_data = []
     for box in results.boxes or []:
         cls_id, conf, bbox, tracker_id = int(box.cls[0]), float(box.conf[0]), box.xyxy[0], int(box.id[0] or -1)

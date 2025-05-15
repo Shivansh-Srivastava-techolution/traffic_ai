@@ -100,12 +100,20 @@ def threaded_gemini_call(frame, metadata_text):
 
                                 **Return a in this format exaclty:
                                     
-                                Traffic Jam: true/false | Slow Traffic: true/false | Vehicle Crash (type of vehicle): true/false | Emergency Vehicle: true/false | No Incident: true/false
+                                Traffic Jam: ✔/✕
+                                Slow Traffic: ✔/✕
+                                Vehicle Crash : ✔/✕
+                                Emergency Vehicle: ✔/✕ 
+                                No Incident: ✔/✕
                                 
-                                Example output
-                                Traffic Jam: false | Slow Traffic: true | Vehicle Crash (car): true | Emergency Vehicle: false | No Incident: false
+                                Example output:
+                                Traffic Jam: ✔
+                                Slow Traffic: ✔
+                                Vehicle Crash : ✔ 
+                                Emergency Vehicle: ✔ 
+                                No Incident: ✕
                                 
-                                Now analyze the current frame and metadata, and return only the text as specified above
+                                Now analyze the current frame and metadata, and return only the text in the above format
                             """
                         ]
                     )
